@@ -152,7 +152,7 @@ public class BitmapEncoderTest extends ModuleTestBase
         // with empty contents should just get straight run
         input = new byte[BYTES];
         encoder = new BitmapEncoder(input, input.length * 8);
-        assertEquals(0, encoder._encodeLevel2(0));
+        assertEquals(0, encoder._encodeFullLevel2(0));
         // but has now consumed input...
         assertEquals(BYTES, encoder._inputPtr);
         assertEquals(0, encoder._outputTail);
@@ -163,7 +163,7 @@ public class BitmapEncoderTest extends ModuleTestBase
         Arrays.fill(input, (byte) 0xFF);
         encoder = new BitmapEncoder(input, input.length * 8);
         // 8-bit mask with first one set
-        assertEquals(0x80, encoder._encodeLevel2(0));
+        assertEquals(0x80, encoder._encodeFullLevel2(0));
         assertEquals(BYTES, encoder._inputPtr);
         assertEquals(3, encoder._outputTail); // 1 actual byte at low level, 2 levels of masks
         assertEquals(0x80, encoder._output[0] & 0xFF);
@@ -176,7 +176,7 @@ public class BitmapEncoderTest extends ModuleTestBase
         Arrays.fill(input, BYTES/2, input.length, (byte) 0xFF);
         encoder = new BitmapEncoder(input, input.length * 8);
         // should not be completely empty...
-        result = encoder._encodeLevel2(0);
+        result = encoder._encodeFullLevel2(0);
         assertEquals(BYTES, encoder._inputPtr);
         assertEquals(0x08, result);
         assertEquals(3, encoder._outputTail); // 1 data byte, plus 2 levels of prefixes
@@ -196,7 +196,7 @@ public class BitmapEncoderTest extends ModuleTestBase
         input = new byte[BYTES];
         Arrays.fill(input, (byte)0xAA);
         encoder = new BitmapEncoder(input, input.length * 8);
-        assertEquals(0xFF, encoder._encodeLevel2(0));
+        assertEquals(0xFF, encoder._encodeFullLevel2(0));
         assertEquals(BYTES, encoder._inputPtr);
         assertEquals(0, encoder._matchLevel1); // ends with 0-bit
 
@@ -230,7 +230,7 @@ public class BitmapEncoderTest extends ModuleTestBase
         // with empty contents should just get straight run
         input = new byte[BYTES];
         encoder = new BitmapEncoder(input, input.length * 8);
-        assertEquals(0, encoder._encodeLevel3(0));
+        assertEquals(0, encoder.encodeFullChunk(0));
         // but has now consumed input...
         assertEquals(BYTES, encoder._inputPtr);
         assertEquals(0, encoder._outputTail);
@@ -241,7 +241,7 @@ public class BitmapEncoderTest extends ModuleTestBase
         Arrays.fill(input, (byte) 0xFF);
         encoder = new BitmapEncoder(input, input.length * 8);
         // 8-bit mask with first one set
-        assertEquals(0x80, encoder._encodeLevel3(0));
+        assertEquals(0x80, encoder.encodeFullChunk(0));
         assertEquals(BYTES, encoder._inputPtr);
         assertEquals(4, encoder._outputTail); // 1 actual byte at low level, 3 levels of masks
         assertEquals(0x80, encoder._output[0] & 0xFF);
@@ -255,7 +255,7 @@ public class BitmapEncoderTest extends ModuleTestBase
         Arrays.fill(input, BYTES/2, input.length, (byte) 0xFF);
         encoder = new BitmapEncoder(input, input.length * 8);
         // should not be completely empty...
-        result = encoder._encodeLevel3(0);
+        result = encoder.encodeFullChunk(0);
         assertEquals(BYTES, encoder._inputPtr);
         assertEquals(0x08, result);
         assertEquals(4, encoder._outputTail); // 1 data byte, plus 2 levels of prefixes
@@ -265,7 +265,7 @@ public class BitmapEncoderTest extends ModuleTestBase
         assertEquals(0xFF, encoder._output[3] & 0xFF);
         assertEquals(0xFF, encoder._matchLevel1);
     }
-    
+
     public void testLevel3NotCompressing()
     {
         final int BYTES = 32 * 16 * 8; // 4k
@@ -276,7 +276,7 @@ public class BitmapEncoderTest extends ModuleTestBase
         input = new byte[BYTES];
         Arrays.fill(input, (byte)0xAA);
         encoder = new BitmapEncoder(input, input.length * 8);
-        assertEquals(0xFF, encoder._encodeLevel3(0));
+        assertEquals(0xFF, encoder.encodeFullChunk(0));
         assertEquals(BYTES, encoder._inputPtr);
         assertEquals(0, encoder._matchLevel1); // ends with 0-bit
 
@@ -302,4 +302,58 @@ public class BitmapEncoderTest extends ModuleTestBase
             }
         }
     }
+
+    // Test to check that it is possible to encode partial chunks too
+    public void testLevel3Partial()
+    {
+        final int BYTES = 512 + 64 + 8 + 3;
+        byte[] input;
+        BitmapEncoder encoder;
+        int result;
+
+        // with empty contents should just get straight run
+        input = new byte[BYTES];
+        encoder = new BitmapEncoder(input, input.length * 8);
+        assertEquals(0, encoder.encodePartialChunk(0, BYTES));
+        // but has now consumed input...
+        assertEquals(BYTES, encoder._inputPtr);
+        assertEquals(0, encoder._outputTail);
+        assertEquals(0, encoder._matchLevel1);
+
+        // with all 1s, bit different due to assumption of starting with '0'
+        input = new byte[BYTES];
+        Arrays.fill(input, (byte) 0xFF);
+        encoder = new BitmapEncoder(input, input.length * 8);
+        // 8-bit mask with first one set
+        assertEquals(0x80, encoder.encodePartialChunk(0, BYTES));
+        assertEquals(BYTES, encoder._inputPtr);
+        assertEquals(4, encoder._outputTail); // 1 actual byte at low level, 3 levels of masks
+
+        assertEquals(0x80, encoder._output[0] & 0xFF);
+        assertEquals(0x80, encoder._output[1] & 0xFF);
+        assertEquals(0x80, encoder._output[2] & 0xFF);
+        assertEquals(0xFF, encoder._output[3] & 0xFF);
+        assertEquals(0xFF, encoder._matchLevel1);
+
+        // and more, with half 0s, followed by half 1s
+        input = new byte[BYTES];
+        Arrays.fill(input, 512, input.length, (byte) 0xFF);
+        encoder = new BitmapEncoder(input, input.length * 8);
+        // should not be completely empty...
+        result = encoder.encodePartialChunk(0, BYTES);
+        assertEquals(BYTES, encoder._inputPtr);
+        assertEquals(4, encoder._outputTail); // 1 data byte, plus 2 levels of prefixes
+        assertEquals(0x40, result);
+
+for (int i = 0; i < 4; ++i) {
+    System.out.printf(" at %d: 0x%x\n", i, encoder._output[0] & 0xFF);
+}
+        
+        assertEquals(0x80, encoder._output[0] & 0xFF);
+        assertEquals(0x80, encoder._output[1] & 0xFF);
+        assertEquals(0x80, encoder._output[2] & 0xFF);
+        assertEquals(0xFF, encoder._output[3] & 0xFF);
+        assertEquals(0xFF, encoder._matchLevel1);
+    }
+
 }

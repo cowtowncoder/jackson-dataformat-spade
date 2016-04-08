@@ -2,6 +2,10 @@ package com.fasterxml.jackson.dataformat.spade;
 
 public class BitmapEncoder
 {
+    public final static int FULL_CHUNK_SIZE = 0x1000; // that is, 4k
+
+    public final static int LEVEL2_CHUNK_SIZE = 512;
+
     private final static byte ZERO_BYTE = 0;
 
     /**
@@ -34,15 +38,24 @@ public class BitmapEncoder
         _output = new byte[maxNeeded];
     }
 
+    /*
+    /**********************************************************************
+    /* Public API, encoding
+    /**********************************************************************
+     */
+    
     /**
-     * Top-level compressor that calls {@link #_encodeLevel2} to handle 8 of 512-byte chunks,
+     * Top-level compressor that calls {@link #_encodeFullLevel2} to handle 8 of 512-byte chunks,
      * resulting in 4k input blocks, with 8-bit mask to indicate which chunks contain
      * literal bytes.
+     * 
+     * @return Byte mask indicating which of 512 chunks (of 4k input) have literal bytes;
+     *    this is needed for decoding.
      */
-    int _encodeLevel3(int outputPtr)
+    public int encodeFullChunk(int outputPtr)
     {
         // Let's do this unrolled:
-        int resultMask = _encodeLevel2(outputPtr+1);
+        int resultMask = _encodeFullLevel2(outputPtr+1);
         if (resultMask != 0) { // had output, so prepend mask
             _output[outputPtr] = (byte) resultMask;
             resultMask |= 0x80;
@@ -50,43 +63,43 @@ public class BitmapEncoder
         }
 
         // and then 7 more times
-        int mask = _encodeLevel2(outputPtr+1);
+        int mask = _encodeFullLevel2(outputPtr+1);
         if (mask != 0) {
             _output[outputPtr] = (byte) mask;
             resultMask |= 0x40;
             outputPtr = _outputTail;
         }
-        mask = _encodeLevel2(outputPtr+1);
+        mask = _encodeFullLevel2(outputPtr+1);
         if (mask != 0) {
             _output[outputPtr] = (byte) mask;
             resultMask |= 0x20;
             outputPtr = _outputTail;
         }
-        mask = _encodeLevel2(outputPtr+1);
+        mask = _encodeFullLevel2(outputPtr+1);
         if (mask != 0) {
             _output[outputPtr] = (byte) mask;
             resultMask |= 0x10;
             outputPtr = _outputTail;
         }
-        mask = _encodeLevel2(outputPtr+1);
+        mask = _encodeFullLevel2(outputPtr+1);
         if (mask != 0) {
             _output[outputPtr] = (byte) mask;
             resultMask |= 0x08;
             outputPtr = _outputTail;
         }
-        mask = _encodeLevel2(outputPtr+1);
+        mask = _encodeFullLevel2(outputPtr+1);
         if (mask != 0) {
             _output[outputPtr] = (byte) mask;
             resultMask |= 0x04;
             outputPtr = _outputTail;
         }
-        mask = _encodeLevel2(outputPtr+1);
+        mask = _encodeFullLevel2(outputPtr+1);
         if (mask != 0) {
             _output[outputPtr] = (byte) mask;
             resultMask |= 0x02;
             outputPtr = _outputTail;
         }
-        mask = _encodeLevel2(outputPtr+1);
+        mask = _encodeFullLevel2(outputPtr+1);
         if (mask != 0) {
             _output[outputPtr] = (byte) mask;
             resultMask |= 0x01;
@@ -94,6 +107,51 @@ public class BitmapEncoder
         }
         return resultMask;
     }
+
+    /**
+     * Alternative output method called when content to decode 
+     */
+    public int encodePartialChunk(int outputPtr, int chunkSize)
+    {
+        if (chunkSize >= FULL_CHUNK_SIZE) {
+            if (chunkSize == FULL_CHUNK_SIZE) {
+                return encodeFullChunk(outputPtr);
+            }
+            throw new IllegalArgumentException(String.format(
+                    "Invalid chunk size %d for partial output: should be less than %d",
+                    chunkSize, FULL_CHUNK_SIZE));
+        }
+        int resultMask = 0;
+        int marker = 0x80;
+
+        // Trickier to unroll, plus not as much point
+        int left = chunkSize;
+        for (; left >= LEVEL2_CHUNK_SIZE; left -= LEVEL2_CHUNK_SIZE) {
+            int mask = _encodeFullLevel2(outputPtr+1);
+            if (mask != 0) { // had output, so prepend mask
+                _output[outputPtr] = (byte) mask;
+                resultMask |= marker;
+                outputPtr = _outputTail;
+            }
+            marker >>= 1;
+        }
+        // Ok no more half-k (level 2) chunks. But may have remainders
+        if (left > 0) {
+            int mask = _encodePartialLevel2(outputPtr+1, left);
+            if (mask != 0) {
+                _output[outputPtr] = (byte) resultMask;
+                resultMask |= marker;
+                outputPtr = _outputTail;
+            }
+        }
+        return resultMask;
+    }
+
+    /*
+    /**********************************************************************
+    /* Internal methods, full chunk encoding
+    /**********************************************************************
+     */
     
     /**
      * Second-level encoding function that delegates to {@link #_encodeFullLevel1}
@@ -103,7 +161,7 @@ public class BitmapEncoder
      *
      * @return 8-bit mask of blocks produced
      */
-    int _encodeLevel2(int outputPtr)
+    int _encodeFullLevel2(int outputPtr)
     {
         int resultMask = 0;
 
@@ -136,7 +194,7 @@ public class BitmapEncoder
         }
         return resultMask;
     }
-    
+
     /**
      * Lowest-level encoding method for full blocks: handles 32 bytes, that is, 256 bits.
      * Contains one special optimization for "non-compressing" content. Note that
@@ -152,14 +210,6 @@ public class BitmapEncoder
         int resultBits = 0;
         int origOutputPtr = outputPtr; // to check whether compression achieved
         int inputPtr = _inputPtr;
-
-        /*
-System.err.print(" encodeLevel1 #"+inputPtr+": ");        
-for (int i = 0; i < 32; ++i) {
-    System.err.printf(" %02x", _input[_inputPtr+i] & 0xFF);
-}
-System.err.println();
-*/
         
         // Need 4 loops of 8 bytes each as prefixes are interleaved
         int rounds = 4;
@@ -254,6 +304,130 @@ System.err.println();
         }
         _inputPtr = inputPtr;
         return resultBits;
+    }
+
+    /*
+    /**********************************************************************
+    /* Internal methods, partial chunk encoding
+    /**********************************************************************
+     */
+
+    /**
+     * Alternate method used when output for chunk smaller than 512
+     * bytes is needed.
+     */
+    int _encodePartialLevel2(int outputPtr, int chunkSize)
+    {
+        if (chunkSize >= LEVEL2_CHUNK_SIZE) { // just sanity check to ensure it is partial
+            throw new IllegalArgumentException(String.format(
+                    "Invalid chunk size %d for partial output: should be less than %d",
+                    chunkSize, LEVEL2_CHUNK_SIZE));
+        }
+        int resultMask = 0;
+        int marker = 0x80;
+
+        int left = chunkSize;
+        for (; left >= 64; left -= 64) {
+            final int origOutputPtr = outputPtr;
+            ++outputPtr;
+            int mask = _encodeFullLevel1(outputPtr);
+            if (mask != 0) { // not a full run, appended output
+                mask <<= 4;
+                outputPtr = _outputTail;
+            }
+            int lo = _encodeFullLevel1(outputPtr);
+            if (lo != 0) {
+                outputPtr = _outputTail;
+                mask |= lo;
+            }
+            if (mask == 0) { // no output, reset position
+                outputPtr = origOutputPtr;
+            } else { // had output, so prepend mask
+                _output[origOutputPtr] = (byte) mask;
+                resultMask |= marker;
+            }
+            marker >>= 1;
+        }
+        // Ok no more 64 byte (level 3) chunks. But may have smaller leftovers still...
+        if (left > 0) {
+            int mask = _encodePartialLevel1(outputPtr+1, left);
+            if (mask != 0) {
+                _output[outputPtr] = (byte) resultMask;
+                resultMask |= marker;
+                outputPtr = _outputTail;
+            }
+        }
+        return resultMask;
+    }
+
+    int _encodePartialLevel1(int outputPtr, int chunkSize)
+    {
+        if (chunkSize >= LEVEL2_CHUNK_SIZE) { // just sanity check to ensure it is partial
+            throw new IllegalArgumentException(String.format(
+                    "Invalid chunk size %d for partial output: should be less than %d",
+                    chunkSize, LEVEL2_CHUNK_SIZE));
+        }
+        int resultMask = 0;
+        int resultBit = 0x80;
+
+        // First, full 8-byte chunks. Note that here we do NOT worry about
+        // sub-optimal last chunk
+
+        int match = _matchLevel1;
+        int inputPtr = _inputPtr;
+        
+        int left = chunkSize;
+        for (; left >= 8; left -= 8) {
+            final int baseOut = outputPtr;
+
+            int mask8 = 0;
+            for (int bit8 = 0x80; bit8 != 0; bit8 >>= 1) {
+                byte b = _input[inputPtr++];
+                // Basic component, repeated 8 times: see if run continues; if not, output byte, add bit
+                if ((b & 0xFF) != match) {
+                    _output[++outputPtr] = b; // important: advance first, to leave room for prefix
+                    match = ((b & 0x1) == 0) ? 0 : 0xFF;
+                    mask8 |= bit8;
+                }
+            }
+            // did we output any?
+            if (mask8 != 0) { // yes, need to output prefix
+                _output[baseOut] = (byte) mask8;
+                ++outputPtr; // since it pointed to the last added byte
+                resultMask |= resultBit;
+            }
+            resultBit >>= 1;
+        }
+        
+        // and finally, individual bytes, if need be
+        if (left > 0) {
+            int mask8 = 0;
+            int bit8 = 0x80;
+            final int baseOut = outputPtr;
+
+            while (--left >= 0) {
+                byte b = _input[inputPtr++];
+                // Basic component, repeated 8 times: see if run continues; if not, output byte, add bit
+                if ((b & 0xFF) != match) {
+                    _output[++outputPtr] = b; // important: advance first, to leave room for prefix
+                    match = ((b & 0x1) == 0) ? 0 : 0xFF;
+                    mask8 |= bit8;
+                }
+            }
+            if (mask8 != 0) { // yes, need to output prefix
+                _output[baseOut] = (byte) mask8;
+                ++outputPtr; // since it pointed to the last added byte
+                resultMask |= resultBit;
+            }
+        }
+
+        // at lowest level we are sure to advance the pointer
+        if (resultMask != 0){
+            _outputTail = outputPtr;
+            _matchLevel1 = match;
+        }
+        _inputPtr = inputPtr;
+        return resultMask;
     }
 
     /*
