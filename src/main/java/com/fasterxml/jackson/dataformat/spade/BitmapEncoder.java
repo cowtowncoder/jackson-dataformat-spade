@@ -1,5 +1,7 @@
 package com.fasterxml.jackson.dataformat.spade;
 
+import java.io.*;
+
 public class BitmapEncoder
 {
     public final static int FULL_CHUNK_SIZE = 0x1000; // that is, 4k
@@ -22,7 +24,7 @@ public class BitmapEncoder
 
     // 8-bit value that constitutes continuation of the match
     int _matchLevel1 = 0x0; // starts with clear bits
-    
+
     public BitmapEncoder(byte[] input, int bitLength)
     {
         _input = input;
@@ -36,6 +38,31 @@ public class BitmapEncoder
         int maxNeeded = input.length; 
         maxNeeded +=  ((maxNeeded + 15) >> 4) + 4;
         _output = new byte[maxNeeded];
+    }
+
+    public BitmapEncoder(byte[] input, byte[] output)
+    {
+        _input = input;
+        _output = output;
+    }
+
+    public void reset(boolean firstBit) {
+        _inputPtr = 0;
+        _outputTail = 0;
+        _matchLevel1 = firstBit ? 0xFF : 0x0;
+    }
+    
+    /*
+    /**********************************************************************
+    /* Public API, accessors
+    /**********************************************************************
+     */
+
+    public int getInputPtr() { return _inputPtr; }
+    public int getOutputPtr() { return _outputTail; }
+
+    public boolean wasLastBitSet() {
+        return (_matchLevel1 != 0);
     }
 
     /*
@@ -454,5 +481,56 @@ public class BitmapEncoder
         if (changed != old) {
             input[offset] = (byte) changed;
         }
+    }
+
+    /*
+    /**********************************************************************
+    /* Testing
+    /**********************************************************************
+     */
+
+    public static void main(String[] args) throws Exception
+    {
+        if (args.length != 1) {
+            System.err.println("Usage: java [class] <input-file>");
+            System.exit(1);
+        }
+
+        FileInputStream in = new FileInputStream(args[0]);
+        byte[] input = new byte[FULL_CHUNK_SIZE];
+        byte[] output = new byte[FULL_CHUNK_SIZE + (FULL_CHUNK_SIZE >> 3)];
+        final BitmapEncoder enc = new BitmapEncoder(input, output);
+
+        int totalInput = 0;
+        int totalOutput = 0;
+        int chunks = 0;
+
+        int count;
+        while ((count = in.read(input, 0, input.length)) == FULL_CHUNK_SIZE) {
+            ++chunks;
+            totalInput += count;
+
+            enc.reset(false);
+            enc.encodeFullChunk(0);
+            totalOutput += 1 + enc.getOutputPtr();
+        }
+        in.close();
+
+        if (count > 0) {
+            ++chunks;
+            totalInput += count;
+
+            enc.reset(false);
+            enc.encodePartialChunk(0, count);
+            // one extra byte at least as header
+            totalOutput += 1 + enc.getOutputPtr();
+        }
+
+        System.out.printf("Completed: read %.1fkB, wrote %.1fkB (in %d chunks), ratio %.2f%%\n",
+                totalInput / 1024.0,
+                totalOutput / 1024.0,
+                chunks,
+                100.0 * (double) totalOutput / (double) totalInput
+                );
     }
 }
