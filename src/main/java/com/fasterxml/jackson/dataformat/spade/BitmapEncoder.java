@@ -139,7 +139,7 @@ public class BitmapEncoder
         if (left > 0) {
             int mask = _encodePartialLevel2(outputPtr+1, left);
             if (mask != 0) {
-                _output[outputPtr] = (byte) resultMask;
+                _output[outputPtr] = (byte) mask;
                 resultMask |= marker;
                 outputPtr = _outputTail;
             }

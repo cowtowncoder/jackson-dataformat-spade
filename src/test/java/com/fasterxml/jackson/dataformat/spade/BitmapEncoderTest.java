@@ -345,10 +345,6 @@ public class BitmapEncoderTest extends ModuleTestBase
         assertEquals(4, encoder._outputTail); // 1 data byte, plus 2 levels of prefixes
         assertEquals(0x40, result);
 
-for (int i = 0; i < 4; ++i) {
-    System.out.printf(" at %d: 0x%x\n", i, encoder._output[0] & 0xFF);
-}
-        
         assertEquals(0x80, encoder._output[0] & 0xFF);
         assertEquals(0x80, encoder._output[1] & 0xFF);
         assertEquals(0x80, encoder._output[2] & 0xFF);
