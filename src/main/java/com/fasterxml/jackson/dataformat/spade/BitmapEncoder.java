@@ -13,45 +13,20 @@ public class BitmapEncoder
     /**
      * Buffer from which input to encode is read.
      */
-    protected final byte[] _input;
+    protected byte[] _input;
 
-    protected final byte[] _output;
+    protected byte[] _output;
 
-    int _inputPtr;
+    protected int _inputPtr;
     
     // Pointer to point after last byte actually output
-    int _outputTail;
+    protected int _outputTail;
 
     // 8-bit value that constitutes continuation of the match
-    int _matchLevel1 = 0x0; // starts with clear bits
+    protected int _matchLevel1 = 0x0; // starts with clear bits
 
-    public BitmapEncoder(byte[] input, int bitLength)
-    {
-        _input = input;
-        // any trailing bogus bits to fix?
-        int rem = (bitLength & 0x7);
-        if (rem > 0) {
-            _fixLast(input, (bitLength>>3), rem);
-        }
-        // Max overhead at level 1 is 1/32; at level 2 it's 1/64; and at level 3 1/512.
-        // So let's round up to 1/16 for convenience
-        int maxNeeded = input.length; 
-        maxNeeded +=  ((maxNeeded + 15) >> 4) + 4;
-        _output = new byte[maxNeeded];
-    }
+    public BitmapEncoder() { }
 
-    public BitmapEncoder(byte[] input, byte[] output)
-    {
-        _input = input;
-        _output = output;
-    }
-
-    public void reset(boolean firstBit) {
-        _inputPtr = 0;
-        _outputTail = 0;
-        _matchLevel1 = firstBit ? 0xFF : 0x0;
-    }
-    
     /*
     /**********************************************************************
     /* Public API, accessors
@@ -79,8 +54,15 @@ public class BitmapEncoder
      * @return Byte mask indicating which of 512 chunks (of 4k input) have literal bytes;
      *    this is needed for decoding.
      */
-    public int encodeFullChunk(int outputPtr)
+    public int encodeFullChunk(boolean prevBit, byte[] input,
+            byte[] output, int outputPtr)
     {
+        _input = input;
+        _output = output;
+        _outputTail = outputPtr;
+        _matchLevel1 = prevBit ? 0xFF : 0x0;
+        _inputPtr = 0;
+
         // Let's do this unrolled:
         int resultMask = _encodeFullLevel2(outputPtr+1);
         if (resultMask != 0) { // had output, so prepend mask
@@ -138,21 +120,28 @@ public class BitmapEncoder
     /**
      * Alternative output method called when content to decode 
      */
-    public int encodePartialChunk(int outputPtr, int chunkSize)
+    public int encodePartialChunk(boolean prevBit, byte[] input, int inputLen,
+            byte[] output, int outputPtr)
     {
-        if (chunkSize >= FULL_CHUNK_SIZE) {
-            if (chunkSize == FULL_CHUNK_SIZE) {
-                return encodeFullChunk(outputPtr);
+        if (inputLen >= FULL_CHUNK_SIZE) {
+            if (inputLen == FULL_CHUNK_SIZE) {
+                return encodeFullChunk(prevBit, input, output, outputPtr);
             }
             throw new IllegalArgumentException(String.format(
                     "Invalid chunk size %d for partial output: should be less than %d",
-                    chunkSize, FULL_CHUNK_SIZE));
+                    inputLen, FULL_CHUNK_SIZE));
         }
+        _input = input;
+        _inputPtr = 0;
+        _output = output;
+        _outputTail = outputPtr;
+        _matchLevel1 = prevBit ? 0xFF : 0x0;
+        
         int resultMask = 0;
         int marker = 0x80;
 
         // Trickier to unroll, plus not as much point
-        int left = chunkSize;
+        int left = inputLen;
         for (; left >= LEVEL2_CHUNK_SIZE; left -= LEVEL2_CHUNK_SIZE) {
             int mask = _encodeFullLevel2(outputPtr+1);
             if (mask != 0) { // had output, so prepend mask
@@ -499,7 +488,7 @@ public class BitmapEncoder
         FileInputStream in = new FileInputStream(args[0]);
         byte[] input = new byte[FULL_CHUNK_SIZE];
         byte[] output = new byte[FULL_CHUNK_SIZE + (FULL_CHUNK_SIZE >> 3)];
-        final BitmapEncoder enc = new BitmapEncoder(input, output);
+        final BitmapEncoder enc = new BitmapEncoder();
 
         int totalInput = 0;
         int totalOutput = 0;
@@ -509,9 +498,7 @@ public class BitmapEncoder
         while ((count = in.read(input, 0, input.length)) == FULL_CHUNK_SIZE) {
             ++chunks;
             totalInput += count;
-
-            enc.reset(false);
-            enc.encodeFullChunk(0);
+            enc.encodeFullChunk(false, input, output, 0);
             totalOutput += 1 + enc.getOutputPtr();
         }
         in.close();
@@ -519,9 +506,7 @@ public class BitmapEncoder
         if (count > 0) {
             ++chunks;
             totalInput += count;
-
-            enc.reset(false);
-            enc.encodePartialChunk(0, count);
+            enc.encodePartialChunk(false, input, count, output, 0);
             // one extra byte at least as header
             totalOutput += 1 + enc.getOutputPtr();
         }

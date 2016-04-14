@@ -10,6 +10,7 @@ import java.util.Map;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.spade.BitmapEncoder;
+import com.fasterxml.jackson.dataformat.spade.NibblerEncoder;
 
 /**
  * Test tool to check how well bitset compression libs work.
@@ -59,11 +60,12 @@ public class CompressBitSets
                     : String.format("%.2f%%", pct);
             System.out.printf("%s full ", pctDesc);
 
-            System.out.printf("%s(raw), %s(lzf), %s(gzip), %s(bitrat)",
+            System.out.printf("%s(raw), %s(lzf), %s(gzip), %s(bitrat), %s(nibbler)",
                     _length(rawSet.length),
                     _length(compressedLengthLZF(rawSet)),
                     _length(compressedLengthGzip(rawSet)),
-                    _length(ratCompress(rawSet))
+                    _length(ratCompress(rawSet)),
+                    _length(nibblerCompress(rawSet))
             );
             System.out.println();
         }
@@ -84,27 +86,53 @@ public class CompressBitSets
         }
         return bytes.size();
     }
-    
+
     private static int ratCompress(byte[] data)
     {
         byte[] input = new byte[4096];
         byte[] output = new byte[4096 + 100];
-        final BitmapEncoder enc = new BitmapEncoder(input, output);
+        final BitmapEncoder enc = new BitmapEncoder();
         int i = 0;
         int left = data.length;
         int totalOutput = 0;
 
         for (; left >= 4096; i += 4096, left -= 4096) {
-            enc.reset(false);
             System.arraycopy(data, i, input, 0, 4096);
-            enc.encodeFullChunk(0);
-            totalOutput += 1 + enc.getOutputPtr();
+            enc.encodeFullChunk(false, input, output, 0);
+            totalOutput += enc.getOutputPtr() + ratOverheadPerChunk();
         }
         if (left > 0) {
-            enc.reset(false);
             System.arraycopy(data, i, input, 0, left);
-            enc.encodePartialChunk(0, left);
-            totalOutput += 1 + enc.getOutputPtr();
+            enc.encodePartialChunk(false, input, left, output, 0);
+            totalOutput += enc.getOutputPtr() + ratOverheadPerChunk();
+        }
+        return totalOutput;
+    }
+
+    private static int ratOverheadPerChunk() {
+        // one byte for bit mask, 2-byte length indicator
+        return 1 + 2;
+    }
+    
+    private static int nibblerCompress(byte[] data)
+    {
+        final int CHUNK_LEN = NibblerEncoder.MAX_CHUNK_SIZE;
+        byte[] input = new byte[CHUNK_LEN];
+        byte[] output = new byte[NibblerEncoder.MAX_OUTPUT_BUFFER];
+        final NibblerEncoder enc = new NibblerEncoder();
+        int i = 0;
+        int left = data.length;
+        int totalOutput = 0;
+
+        for (; left >= CHUNK_LEN; i += CHUNK_LEN, left -= CHUNK_LEN) {
+            System.arraycopy(data, i, input, 0, CHUNK_LEN);
+            int outBytes = enc.encode(input, 0, CHUNK_LEN, output, 0);
+            totalOutput += outBytes;
+        }
+        if (left > 0) {
+            System.arraycopy(data, i, input, 0, left);
+            int outBytes = enc.encode(input, 0, left, output, 0);
+            totalOutput += outBytes;
         }
         return totalOutput;
     }
