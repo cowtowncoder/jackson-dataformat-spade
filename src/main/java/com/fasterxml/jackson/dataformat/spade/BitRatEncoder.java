@@ -2,7 +2,7 @@ package com.fasterxml.jackson.dataformat.spade;
 
 import java.io.*;
 
-public class BitmapEncoder
+public class BitRatEncoder
 {
     public final static int FULL_CHUNK_SIZE = 0x1000; // that is, 4k
 
@@ -25,7 +25,7 @@ public class BitmapEncoder
     // 8-bit value that constitutes continuation of the match
     protected int _matchLevel1 = 0x0; // starts with clear bits
 
-    public BitmapEncoder() { }
+    public BitRatEncoder() { }
 
     /*
     /**********************************************************************
@@ -488,7 +488,7 @@ public class BitmapEncoder
         FileInputStream in = new FileInputStream(args[0]);
         byte[] input = new byte[FULL_CHUNK_SIZE];
         byte[] output = new byte[FULL_CHUNK_SIZE + (FULL_CHUNK_SIZE >> 3)];
-        final BitmapEncoder enc = new BitmapEncoder();
+        final BitRatEncoder enc = new BitRatEncoder();
 
         int totalInput = 0;
         int totalOutput = 0;

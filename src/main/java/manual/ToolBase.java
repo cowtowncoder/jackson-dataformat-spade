@@ -13,7 +13,7 @@ import java.util.Set;
 
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.spade.BitmapEncoder;
+import com.fasterxml.jackson.dataformat.spade.BitRatEncoder;
 import com.fasterxml.jackson.dataformat.spade.NibblerEncoder;
 
 public class ToolBase
@@ -101,7 +101,7 @@ public class ToolBase
     int ratCompress(byte[] data)
     {
         byte[] output = new byte[4096 + 100];
-        final BitmapEncoder enc = new BitmapEncoder();
+        final BitRatEncoder enc = new BitRatEncoder();
         int i = 0;
         int left = data.length;
         int totalOutput = 0;

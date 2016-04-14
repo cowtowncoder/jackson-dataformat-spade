@@ -15,13 +15,13 @@ public class BitmapEncoderTest extends ModuleTestBase
     private void _verifyFixLast(int base, int lastBits, int exp)
     {
         byte[] b = new byte[] { (byte) base };
-        BitmapEncoder._fixLast(b, 0, lastBits);
+        BitRatEncoder._fixLast(b, 0, lastBits);
         assertEquals(exp, b[0] & 0xFF);
 
         // also verify it works with offset too
         b = new byte[3];
         b[1] = (byte) base;
-        BitmapEncoder._fixLast(b, 1, lastBits);
+        BitRatEncoder._fixLast(b, 1, lastBits);
         assertEquals(exp, b[1] & 0xFF);
         // and that no change occurs for adjacent values
         assertEquals(0, b[0]);
@@ -31,7 +31,7 @@ public class BitmapEncoderTest extends ModuleTestBase
     public void testLevel1Compressing()
     {
         byte[] input = new byte[32];
-        BitmapEncoder encoder = new BitmapEncoder();
+        BitRatEncoder encoder = new BitRatEncoder();
 
         // with empty contents should just get straight run
         
@@ -45,7 +45,7 @@ public class BitmapEncoderTest extends ModuleTestBase
         // with all 1s, bit different due to assumption of starting with '0'
         input = new byte[32];
         Arrays.fill(input, (byte) 0xFF);
-        encoder = new BitmapEncoder();
+        encoder = new BitRatEncoder();
         result = encoder._encodeFullLevel1(0);
         // 4-bit mask with first one set
         assertEquals(0x8, result);
@@ -58,7 +58,7 @@ public class BitmapEncoderTest extends ModuleTestBase
         // and more, with 16 0s, 16 1s, yet different
         input = new byte[32];
         Arrays.fill(input, 16, 32, (byte) 0xFF);
-        encoder = new BitmapEncoder();
+        encoder = new BitRatEncoder();
         result = encoder._encodeFullLevel1(0);
         assertEquals(0x02, result);
         assertEquals(32, encoder._inputPtr);
@@ -72,7 +72,7 @@ public class BitmapEncoderTest extends ModuleTestBase
     public void testLevel1NotEnoughCompressible()
     {
         byte[] input = new byte[32];
-        BitmapEncoder encoder = new BitmapEncoder();
+        BitRatEncoder encoder = new BitRatEncoder();
 
         input = new byte[32];
 
@@ -81,7 +81,7 @@ public class BitmapEncoderTest extends ModuleTestBase
         input[0] = 0;
         input[30] = input[31] = -1;
         
-        encoder = new BitmapEncoder();
+        encoder = new BitRatEncoder();
         int result = encoder._encodeFullLevel1(0);
         assertEquals(0xF, result);
         assertEquals(32, encoder._inputPtr);
@@ -102,12 +102,12 @@ public class BitmapEncoderTest extends ModuleTestBase
     public void testLevel1NonCompressible()
     {
         byte[] input = new byte[32];
-        BitmapEncoder encoder = new BitmapEncoder();
+        BitRatEncoder encoder = new BitRatEncoder();
 
         // Test with zigzag pattern
         input = new byte[32];
         Arrays.fill(input, (byte) 0xAA);
-        encoder = new BitmapEncoder();
+        encoder = new BitRatEncoder();
         int result = encoder._encodeFullLevel1(0);
         assertEquals(0xF, result);
         assertEquals(32, encoder._inputPtr);
@@ -126,7 +126,7 @@ public class BitmapEncoderTest extends ModuleTestBase
         // and just to ensure bit is properly checked
         input = new byte[32];
         Arrays.fill(input, (byte) 0x55);
-        encoder = new BitmapEncoder();
+        encoder = new BitRatEncoder();
         result = encoder._encodeFullLevel1(0);
         assertEquals(0xF, result);
         assertEquals(32, encoder._inputPtr);
@@ -143,12 +143,12 @@ public class BitmapEncoderTest extends ModuleTestBase
     {
         final int BYTES = 32 * 16;
         byte[] input;
-        BitmapEncoder encoder;
+        BitRatEncoder encoder;
         int result;
 
         // with empty contents should just get straight run
         input = new byte[BYTES];
-        encoder = new BitmapEncoder();
+        encoder = new BitRatEncoder();
         assertEquals(0, encoder._encodeFullLevel2(0));
         // but has now consumed input...
         assertEquals(BYTES, encoder._inputPtr);
@@ -158,7 +158,7 @@ public class BitmapEncoderTest extends ModuleTestBase
         // with all 1s, bit different due to assumption of starting with '0'
         input = new byte[BYTES];
         Arrays.fill(input, (byte) 0xFF);
-        encoder = new BitmapEncoder();
+        encoder = new BitRatEncoder();
         // 8-bit mask with first one set
         assertEquals(0x80, encoder._encodeFullLevel2(0));
         assertEquals(BYTES, encoder._inputPtr);
@@ -171,7 +171,7 @@ public class BitmapEncoderTest extends ModuleTestBase
         // and more, with half 0s, followed by half 1s
         input = new byte[BYTES];
         Arrays.fill(input, BYTES/2, input.length, (byte) 0xFF);
-        encoder = new BitmapEncoder();
+        encoder = new BitRatEncoder();
         // should not be completely empty...
         result = encoder._encodeFullLevel2(0);
         assertEquals(BYTES, encoder._inputPtr);
@@ -187,12 +187,12 @@ public class BitmapEncoderTest extends ModuleTestBase
     {
         final int BYTES = 32 * 16;
         byte[] input;
-        BitmapEncoder encoder;
+        BitRatEncoder encoder;
 
         // if non-compressing, should just get sets of literals
         input = new byte[BYTES];
         Arrays.fill(input, (byte)0xAA);
-        encoder = new BitmapEncoder();
+        encoder = new BitRatEncoder();
         assertEquals(0xFF, encoder._encodeFullLevel2(0));
         assertEquals(BYTES, encoder._inputPtr);
         assertEquals(0, encoder._matchLevel1); // ends with 0-bit
@@ -222,12 +222,12 @@ public class BitmapEncoderTest extends ModuleTestBase
         final int BYTES = 32 * 16 * 8; // 4k
         byte[] input;
         final byte[] output = new byte[BYTES + BYTES/8];
-        BitmapEncoder encoder;
+        BitRatEncoder encoder;
         int result;
 
         // with empty contents should just get straight run
         input = new byte[BYTES];
-        encoder = new BitmapEncoder();
+        encoder = new BitRatEncoder();
         assertEquals(0, encoder.encodeFullChunk(false, input, output, 0));
         // but has now consumed input...
         assertEquals(BYTES, encoder._inputPtr);
@@ -237,7 +237,7 @@ public class BitmapEncoderTest extends ModuleTestBase
         // with all 1s, bit different due to assumption of starting with '0'
         input = new byte[BYTES];
         Arrays.fill(input, (byte) 0xFF);
-        encoder = new BitmapEncoder();
+        encoder = new BitRatEncoder();
         // 8-bit mask with first one set
         assertEquals(0x80, encoder.encodeFullChunk(false, input, output, 0));
         assertEquals(BYTES, encoder._inputPtr);
@@ -251,7 +251,7 @@ public class BitmapEncoderTest extends ModuleTestBase
         // and more, with half 0s, followed by half 1s
         input = new byte[BYTES];
         Arrays.fill(input, BYTES/2, input.length, (byte) 0xFF);
-        encoder = new BitmapEncoder();
+        encoder = new BitRatEncoder();
         // should not be completely empty...
         result = encoder.encodeFullChunk(false, input, output, 0);
         assertEquals(BYTES, encoder._inputPtr);
@@ -268,13 +268,13 @@ public class BitmapEncoderTest extends ModuleTestBase
     {
         final int BYTES = 32 * 16 * 8; // 4k
         byte[] input;
-        BitmapEncoder encoder;
+        BitRatEncoder encoder;
 
         // if non-compressing, should just get sets of literals
         input = new byte[BYTES];
         byte[] output = new byte[BYTES + BYTES/8];
         Arrays.fill(input, (byte)0xAA);
-        encoder = new BitmapEncoder();
+        encoder = new BitRatEncoder();
         assertEquals(0xFF, encoder.encodeFullChunk(false, input, output, 0));
         assertEquals(BYTES, encoder._inputPtr);
         assertEquals(0, encoder._matchLevel1); // ends with 0-bit
@@ -308,12 +308,12 @@ public class BitmapEncoderTest extends ModuleTestBase
         final int BYTES = 512 + 64 + 8 + 3;
         byte[] input;
         byte[] output = new byte[BYTES + 100];
-        BitmapEncoder encoder;
+        BitRatEncoder encoder;
         int result;
 
         // with empty contents should just get straight run
         input = new byte[BYTES];
-        encoder = new BitmapEncoder();
+        encoder = new BitRatEncoder();
         assertEquals(0, encoder.encodePartialChunk(false, input, BYTES, output, 0));
         // but has now consumed input...
         assertEquals(BYTES, encoder._inputPtr);
@@ -323,7 +323,7 @@ public class BitmapEncoderTest extends ModuleTestBase
         // with all 1s, bit different due to assumption of starting with '0'
         input = new byte[BYTES];
         Arrays.fill(input, (byte) 0xFF);
-        encoder = new BitmapEncoder();
+        encoder = new BitRatEncoder();
         // 8-bit mask with first one set
         assertEquals(0x80, encoder.encodePartialChunk(false, input, BYTES, output, 0));
         assertEquals(BYTES, encoder._inputPtr);
@@ -338,7 +338,7 @@ public class BitmapEncoderTest extends ModuleTestBase
         // and more, with half 0s, followed by half 1s
         input = new byte[BYTES];
         Arrays.fill(input, 512, input.length, (byte) 0xFF);
-        encoder = new BitmapEncoder();
+        encoder = new BitRatEncoder();
         // should not be completely empty...
         result = encoder.encodePartialChunk(false, input, BYTES, output, 0);
         assertEquals(BYTES, encoder._inputPtr);
