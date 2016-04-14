@@ -43,7 +43,7 @@
       <version>${jackson.version.core}</version>
     </dependency>
 
-    <!-- for perf/efficiency comparisons, check out Roaring -->
+    <!-- for perf/efficiency comparisons, check out Roaring etc -->
     <dependency>
       <groupId>org.roaringbitmap</groupId>
       <artifactId>RoaringBitmap</artifactId>

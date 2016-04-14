@@ -4,8 +4,13 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.security.MessageDigest;
 import java.util.BitSet;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
+
+import org.roaringbitmap.RoaringBitmap;
 
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -39,35 +44,60 @@ public class CompressBitSets
         final int rows = bitsets.rowCount;
         System.out.printf("Read %d records, with %d columns\n", rows, bitsets.columnCount);
 
-        boolean firstEmpty = false;
+        Set<String> seenResults = new HashSet<>();
+
+        boolean firstEmpty = true;
         for (Map.Entry<String,BitsetRecord> entry : bitsets.bitsets.entrySet()) {
-            System.out.printf("Column '%s': ", entry.getKey());
             BitsetRecord r = entry.getValue();
             byte[] rawSet = r.presence;
             if (rawSet == null) {
                 if (firstEmpty) {
                     firstEmpty = false;
                     BitSet bs = new BitSet();
-                    bs.set(0, rows * 8);
+                    bs.set(0, rows);
                     rawSet = bs.toByteArray();
                 } else {
-                    System.out.printf("-FULL-%n");
                     continue;
                 }
             }
+
+            // Let's reduce noise by only using unique results:
+            if (!seenResults.add(sha1(rawSet))) {
+                continue;
+            }
+            System.out.printf("Column '%s': ", entry.getKey());
+
             double pct = 100.0 * (double) r.set / (double) rows;
             String pctDesc = (pct < 1.0) ? String.format("%.1f%%(%db)", pct, r.set)
                     : String.format("%.2f%%", pct);
             System.out.printf("%s full ", pctDesc);
 
-            System.out.printf("%s(raw), %s(lzf), %s(gzip), %s(bitrat), %s(nibbler)",
+            System.out.printf("%s(raw), %s(lzf), %s(gzip), %s(bitrat), %s(nibbler), %s(roaring)",
                     _length(rawSet.length),
                     _length(compressedLengthLZF(rawSet)),
                     _length(compressedLengthGzip(rawSet)),
                     _length(ratCompress(rawSet)),
-                    _length(nibblerCompress(rawSet))
+                    _length(nibblerCompress(rawSet)),
+                    _length(roaringCompress(rawSet))
             );
             System.out.println();
+        }
+    }
+
+    static MessageDigest _sha1;
+    static {
+        try {
+            _sha1 = MessageDigest.getInstance("SHA-1");
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+    
+    static String sha1(byte[] data) {
+        try {
+            return new String(_sha1.digest(data), "UTF-8");
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -136,10 +166,27 @@ public class CompressBitSets
         }
         return totalOutput;
     }
+
+    private static int roaringCompress(byte[] data)
+    {
+        RoaringBitmap r = new RoaringBitmap();
+        int ix = 0;
+        for (int i = 0, end = data.length; i < end; ++i) {
+            int ch = data[i];
+            for (int mask = 0x80; mask != 0; mask >>= 1) {
+                if ((ch & mask) != 0) {
+                    r.add(ix);
+                }
+                ++ix;
+            }
+        }
+        r.runOptimize();
+        return r.serializedSizeInBytes();
+    }
     
     private static String _length(int length) {
         if (length < 2048) {
-            return String.format("%dB", length);
+            return String.format("%db", length);
         }
         if (length < (100 * 1024)) {
             return String.format("%.2fkB", length/1024.0);

@@ -5,7 +5,7 @@ import java.io.FileInputStream;
 public class NibblerEncoder
 {
     public final static int MAX_CHUNK_SIZE = 0x2000; // that is, 8k
-    
+
     /**
      * Even if nothing compresses, we only get 2 bytes for header
      * (which contains 
@@ -52,13 +52,13 @@ public class NibblerEncoder
 
         _outputPtr = outputPtr+2; // to reserve room for 2 header bytes
 
-        if ((ch == 0) || (ch == 0xFF)) { // "run" of all-zero-bits/all-one-bits; at
+        if ((ch == 0) || (ch == -1)) { // "run" of all-zero-bits/all-one-bits; at
             // this point even one is enough to warrant write (no minimum)
             int repeats = _findRunLength(inputPtr, ch); // one less than full length
             int marker = (ch == 0) ? 0x0 : 0x40;
             // but first, output source uncompressed length
             _output[outputPtr++] = (byte) (marker + (srcLengthIndicator >> 8));
-            _output[outputPtr++] = (byte) (srcLengthIndicator & 0xFF);
+            _output[outputPtr++] = (byte) srcLengthIndicator;
             _outputPtr = outputPtr;
             _writeRunLength(repeats);
             // also possible, if unlikely, that we are all done now
@@ -69,7 +69,7 @@ public class NibblerEncoder
             ch = input[inputPtr++];
         } else { // otherwise run of literals. Only need to encode header, then go 
             _output[outputPtr] = (byte) (0x80 + (srcLengthIndicator >> 8));
-            _output[outputPtr+1] = (byte) (srcLengthIndicator & 0xFF);
+            _output[outputPtr+1] = (byte) srcLengthIndicator;
         }
         // On to scheduled programming; got a literal run of at least one byte...
         return _encode2(inputPtr, ch);
@@ -90,8 +90,8 @@ public class NibblerEncoder
         }
         int count = 1;
         _output[_outputPtr++] = (byte) ch;
-        int match = ((ch & 1) == 1) ? 0xFF : 0x0;
-        
+        int match = ((ch & 1) == 1) ? -1 : 0x0;
+
         while (true) {
             if (inputPtr > lastStart) {
                 return _encodeTailLiterals(inputPtr, ch, startOutputOffset, count);
@@ -101,7 +101,7 @@ public class NibblerEncoder
             if (ch != match) {
                 _output[_outputPtr++] = (byte) ch;
                 ++count;
-                match = ((ch & 1) == 1) ? 0xFF : 0x0;
+                match = ((ch & 1) == 1) ? -1 : 0x0;
                 continue;
             }
             // otherwise got first byte of possible run; 2 more needed
@@ -111,7 +111,7 @@ public class NibblerEncoder
                 _output[_outputPtr++] = (byte) match;
                 _output[_outputPtr++] = (byte) ch;
                 count += 2;
-                match = ((ch & 1) == 1) ? 0xFF : 0x0;
+                match = ((ch & 1) == 1) ? -1 : 0x0;
                 continue;
             }
             // one more?
@@ -121,7 +121,7 @@ public class NibblerEncoder
                 _output[_outputPtr++] = (byte) match;
                 _output[_outputPtr++] = (byte) ch;
                 count += 3;
-                match = ((ch & 1) == 1) ? 0xFF : 0x0;
+                match = ((ch & 1) == 1) ? -1 : 0x0;
                 continue;
             }
 
@@ -144,7 +144,7 @@ public class NibblerEncoder
             }
             count = 1;
             _output[_outputPtr++] = (byte) ch;
-            match = ((ch & 1) == 1) ? 0xFF : 0x0;
+            match = ((ch & 1) == 1) ? -1 : 0x0;
         }
     }
 
