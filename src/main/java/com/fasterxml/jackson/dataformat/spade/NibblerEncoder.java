@@ -40,7 +40,7 @@ public class NibblerEncoder
             byte[] output, int outputPtr)
     {
         _validate(input, inputPtr, inputLen, output, outputPtr);
-
+        
         _input = input;
         _output = output;
         _inputEnd = inputPtr + inputLen;
@@ -48,31 +48,36 @@ public class NibblerEncoder
 
         // First things first: 3 possible start conditions
         int ch = input[inputPtr++];
-        final int srcLengthIndicator = inputLen-1; // since we have no content of length 0
+        final int outputStart = outputPtr+2;
 
-        _outputPtr = outputPtr+2; // to reserve room for 2 header bytes
+        _outputPtr = outputStart; // to reserve room for 2 header bytes
 
+        int marker;
         if ((ch == 0) || (ch == -1)) { // "run" of all-zero-bits/all-one-bits; at
             // this point even one is enough to warrant write (no minimum)
             int repeats = _findRunLength(inputPtr, ch); // one less than full length
-            int marker = (ch == 0) ? 0x0 : 0x40;
-            // but first, output source uncompressed length
-            _output[outputPtr++] = (byte) (marker + (srcLengthIndicator >> 8));
-            _output[outputPtr++] = (byte) srcLengthIndicator;
+            marker = (ch == 0) ? 0x0 : 0x40;
             _outputPtr = outputPtr;
             _writeRunLength(repeats);
             // also possible, if unlikely, that we are all done now
             inputPtr += repeats;
             if (inputPtr == _inputEnd) {
-                return _outputPtr;
+                outputPtr = _outputPtr;
+                int encodedLength = outputPtr - outputStart;
+                _output[outputStart-2] = (byte) (marker + (encodedLength >> 8));
+                _output[outputStart-1] = (byte) encodedLength;
+                return outputPtr;
             }
             ch = input[inputPtr++];
         } else { // otherwise run of literals. Only need to encode header, then go 
-            _output[outputPtr] = (byte) (0x80 + (srcLengthIndicator >> 8));
-            _output[outputPtr+1] = (byte) srcLengthIndicator;
+            marker = 0x80;
         }
         // On to scheduled programming; got a literal run of at least one byte...
-        return _encode2(inputPtr, ch);
+        outputPtr = _encode2(inputPtr, ch);
+        int encodedLength = outputPtr - outputStart;
+        _output[outputStart-2] = (byte) (marker + (encodedLength >> 8));
+        _output[outputStart-1] = (byte) encodedLength;
+        return outputPtr;
     }
 
     /**

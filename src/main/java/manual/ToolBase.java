@@ -1,10 +1,15 @@
 package manual;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.security.MessageDigest;
+import java.util.BitSet;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Map;
+import java.util.Set;
 
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -37,23 +42,42 @@ public class ToolBase
     static {
         JSON_MAPPER.enable(JsonParser.Feature.ALLOW_COMMENTS);
     }
-    
-    static String _length(int length) {
-        if (length < 2048) {
-            return String.format("%db", length);
+
+    protected Bitsets readBitsets(String filename) throws IOException
+    {
+        Bitsets bs = JSON_MAPPER.readValue(new File(filename), Bitsets.class);
+        final int rows = bs.rowCount;
+        System.out.printf("Read %d records, with %d columns\n", rows, bs.columnCount);
+
+        Set<String> seenResults = new HashSet<>();
+
+        boolean firstEmpty = true;
+
+        Iterator<Map.Entry<String,BitsetRecord>> it = bs.bitsets.entrySet().iterator();
+
+        while (it.hasNext()) {
+            Map.Entry<String,BitsetRecord> entry = it.next();
+            BitsetRecord r = entry.getValue();
+            byte[] rawSet = r.presence;
+            if (rawSet == null) {
+                if (firstEmpty) {
+                    firstEmpty = false;
+                    BitSet full = new BitSet();
+                    full.set(0, rows);
+                    rawSet = full.toByteArray();
+                    r.presence = rawSet;
+                } else {
+                    it.remove();
+                }
+            } else {
+                // Let's reduce noise by only using unique results:
+                if (!seenResults.add(sha1(rawSet))) {
+                    it.remove();
+                }
+            }
         }
-        if (length < (100 * 1024)) {
-            return String.format("%.2fkB", length/1024.0);
-        }
-        return String.format("%.1fkB", length/1024.0);
-    }
-    
-    static String sha1(byte[] data) {
-        try {
-            return new String(_sha1.digest(data), "UTF-8");
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+        System.out.printf("... of which %d unique.\n", bs.bitsets.size());
+        return bs;
     }
 
     static int compressedLengthLZF(byte[] data) {
@@ -119,5 +143,23 @@ public class ToolBase
             totalOutput += outBytes;
         }
         return totalOutput;
+    }
+
+    static String _length(int length) {
+        if (length < 2048) {
+            return String.format("%db", length);
+        }
+        if (length < (100 * 1024)) {
+            return String.format("%.2fkB", length/1024.0);
+        }
+        return String.format("%.1fkB", length/1024.0);
+    }
+    
+    static String sha1(byte[] data) {
+        try {
+            return new String(_sha1.digest(data), "UTF-8");
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 }
