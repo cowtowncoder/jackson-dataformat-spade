@@ -2,7 +2,7 @@ package com.fasterxml.jackson.dataformat.spade;
 
 import java.util.Arrays;
 
-public class BitmapEncoderTest extends ModuleTestBase
+public class BitRatEncoderTest extends ModuleTestBase
 {
     public void testFixLast()
     {
@@ -34,8 +34,7 @@ public class BitmapEncoderTest extends ModuleTestBase
         BitRatEncoder encoder = new BitRatEncoder();
 
         // with empty contents should just get straight run
-        
-        int result = encoder._encodeFullLevel1(0);
+        int result = _encodeFullLevel1(encoder, input);
         assertEquals(0, result);
         // but has now consumed input...
         assertEquals(32, encoder._inputPtr);
@@ -46,7 +45,7 @@ public class BitmapEncoderTest extends ModuleTestBase
         input = new byte[32];
         Arrays.fill(input, (byte) 0xFF);
         encoder = new BitRatEncoder();
-        result = encoder._encodeFullLevel1(0);
+        result = _encodeFullLevel1(encoder, input);
         // 4-bit mask with first one set
         assertEquals(0x8, result);
         assertEquals(32, encoder._inputPtr);
@@ -59,7 +58,7 @@ public class BitmapEncoderTest extends ModuleTestBase
         input = new byte[32];
         Arrays.fill(input, 16, 32, (byte) 0xFF);
         encoder = new BitRatEncoder();
-        result = encoder._encodeFullLevel1(0);
+        result = _encodeFullLevel1(encoder, input);
         assertEquals(0x02, result);
         assertEquals(32, encoder._inputPtr);
         assertEquals(2, encoder._outputTail); // 1 changed bit plus the prefix
@@ -72,17 +71,13 @@ public class BitmapEncoderTest extends ModuleTestBase
     public void testLevel1NotEnoughCompressible()
     {
         byte[] input = new byte[32];
-        BitRatEncoder encoder = new BitRatEncoder();
-
-        input = new byte[32];
-
         // make first and last two compressible; still not enough (34 bytes, vs 33 with 'no-comp')
         Arrays.fill(input, (byte) 0xAA);
         input[0] = 0;
         input[30] = input[31] = -1;
         
-        encoder = new BitRatEncoder();
-        int result = encoder._encodeFullLevel1(0);
+        BitRatEncoder encoder = new BitRatEncoder();
+        int result = _encodeFullLevel1(encoder, input);
         assertEquals(0xF, result);
         assertEquals(32, encoder._inputPtr);
         // Without optimization would be 36, with optimization 33
@@ -108,7 +103,7 @@ public class BitmapEncoderTest extends ModuleTestBase
         input = new byte[32];
         Arrays.fill(input, (byte) 0xAA);
         encoder = new BitRatEncoder();
-        int result = encoder._encodeFullLevel1(0);
+        int result = _encodeFullLevel1(encoder, input);
         assertEquals(0xF, result);
         assertEquals(32, encoder._inputPtr);
         // Without optimization would be 36, with optimization 33
@@ -127,7 +122,7 @@ public class BitmapEncoderTest extends ModuleTestBase
         input = new byte[32];
         Arrays.fill(input, (byte) 0x55);
         encoder = new BitRatEncoder();
-        result = encoder._encodeFullLevel1(0);
+        result = _encodeFullLevel1(encoder, input);
         assertEquals(0xF, result);
         assertEquals(32, encoder._inputPtr);
         assertEquals(33, encoder._outputTail);
@@ -149,7 +144,8 @@ public class BitmapEncoderTest extends ModuleTestBase
         // with empty contents should just get straight run
         input = new byte[BYTES];
         encoder = new BitRatEncoder();
-        assertEquals(0, encoder._encodeFullLevel2(0));
+
+        assertEquals(0, _encodeFullLevel2(encoder, input));
         // but has now consumed input...
         assertEquals(BYTES, encoder._inputPtr);
         assertEquals(0, encoder._outputTail);
@@ -160,7 +156,9 @@ public class BitmapEncoderTest extends ModuleTestBase
         Arrays.fill(input, (byte) 0xFF);
         encoder = new BitRatEncoder();
         // 8-bit mask with first one set
-        assertEquals(0x80, encoder._encodeFullLevel2(0));
+        assertEquals(0x80, _encodeFullLevel2(encoder, input));
+
+//        assertEquals(0x80, encoder._encodeFullLevel2(0));
         assertEquals(BYTES, encoder._inputPtr);
         assertEquals(3, encoder._outputTail); // 1 actual byte at low level, 2 levels of masks
         assertEquals(0x80, encoder._output[0] & 0xFF);
@@ -172,8 +170,11 @@ public class BitmapEncoderTest extends ModuleTestBase
         input = new byte[BYTES];
         Arrays.fill(input, BYTES/2, input.length, (byte) 0xFF);
         encoder = new BitRatEncoder();
+
         // should not be completely empty...
-        result = encoder._encodeFullLevel2(0);
+//        assertEquals(0x80, _encodeFullLevel2(encoder, input));
+
+        result = _encodeFullLevel2(encoder, input);
         assertEquals(BYTES, encoder._inputPtr);
         assertEquals(0x08, result);
         assertEquals(3, encoder._outputTail); // 1 data byte, plus 2 levels of prefixes
@@ -193,7 +194,7 @@ public class BitmapEncoderTest extends ModuleTestBase
         input = new byte[BYTES];
         Arrays.fill(input, (byte)0xAA);
         encoder = new BitRatEncoder();
-        assertEquals(0xFF, encoder._encodeFullLevel2(0));
+        assertEquals(0xFF, _encodeFullLevel2(encoder, input));
         assertEquals(BYTES, encoder._inputPtr);
         assertEquals(0, encoder._matchLevel1); // ends with 0-bit
 
@@ -352,4 +353,25 @@ public class BitmapEncoderTest extends ModuleTestBase
         assertEquals(0xFF, encoder._matchLevel1);
     }
 
+    private int _encodeFullLevel1(BitRatEncoder encoder, byte[] input) {
+        return _encodeFullLevel1(encoder, input,
+                new byte[input.length + (input.length>>4) + 4]);
+    }
+
+    private int _encodeFullLevel1(BitRatEncoder encoder, byte[] input, byte[] output) {
+        encoder._input = input;
+        encoder._output = output;
+        return encoder._encodeFullLevel1(0);
+    }
+
+    private int _encodeFullLevel2(BitRatEncoder encoder, byte[] input) {
+        return _encodeFullLevel2(encoder, input,
+                new byte[input.length + (input.length>>4) + 4]);
+    }
+
+    private int _encodeFullLevel2(BitRatEncoder encoder, byte[] input, byte[] output) {
+        encoder._input = input;
+        encoder._output = output;
+        return encoder._encodeFullLevel2(0);
+    }
 }
